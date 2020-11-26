@@ -66,8 +66,20 @@ function App() {
 
       if (hand.length > 0) {
         const GE = new fp.GestureEstimator(letters);
-        const gesture = await GE.estimate(hand[0].landmarks, 7);
+        const gesture = await GE.estimate(hand[0].landmarks, 4);
+
+        for (let i = 0; i < 10; ++i) {
+          console.log(gesture.gestures[i]);
+        }
+
+        console.log('----------describe----------');
+
+        for (let i = 0; i < 5; ++i) {
+          console.log(gesture.poseData[i]);
+        }
+
         if (gesture.gestures !== undefined && gesture.gestures.length > 0) {
+
           const confidence = gesture.gestures.map(
             (prediction) => prediction.confidence
           );
@@ -75,19 +87,25 @@ function App() {
             Math.max.apply(null, confidence)
           );
 
+          console.log(confidence);
+          console.log(maxConfidence);
+
           symbol = gesture.gestures[maxConfidence].name;
 
           if (symbol === null) {
-              textareaPredictionRef.current.placeholder = 'Ничего не распознано';
+            textareaPredictionRef.current.placeholder = 'Ничего не распознано';
           } else {
             textareaPredictionRef.current.placeholder = symbol;
           }
-
           console.log("current symbol: " + symbol);
+
+          console.log('----------next----------');
         }
       }
       const ctx = canvasRef.current.getContext("2d");
       drawHand(hand, ctx);
+    } else {
+      textareaRef.current.placeholder = 'Необходимо подключить камеру';
     }
   };
 
