@@ -40,6 +40,27 @@ function App() {
     }, 100);
   };
 
+  const directions = {
+    STATIC: 0,
+    UP: 1,
+    RIGHT: 2,
+    DOWN: 3,
+    LEFT: 4
+  }
+
+  const figures = {
+    NONE: 0,
+    SEMICIRCLE: 1,
+    CIRCLE: 2,
+  }
+
+  let handMovePoints = [];
+  let handDirections = {
+    x: [],
+    y: []
+  };
+  let lastFigure;
+
   const detect = async (net) => {
     if (
       typeof webcamRef.current !== "undefined" &&
@@ -68,15 +89,7 @@ function App() {
         const GE = new fp.GestureEstimator(letters);
         const gesture = await GE.estimate(hand[0].landmarks, 4);
 
-        for (let i = 0; i < 10; ++i) {
-          console.log(gesture.gestures[i]);
-        }
-
         console.log('----------describe----------');
-
-        for (let i = 0; i < 5; ++i) {
-          console.log(gesture.poseData[i]);
-        }
 
         if (gesture.gestures !== undefined && gesture.gestures.length > 0) {
 
@@ -87,9 +100,6 @@ function App() {
             Math.max.apply(null, confidence)
           );
 
-          console.log(confidence);
-          console.log(maxConfidence);
-
           symbol = gesture.gestures[maxConfidence].name;
 
           if (symbol === null) {
@@ -97,9 +107,108 @@ function App() {
           } else {
             textareaPredictionRef.current.placeholder = symbol;
           }
-          console.log("current symbol: " + symbol);
 
-          console.log('----------next----------');
+          handMovePoints.push(hand[0].landmarks[0]);
+
+          if (handMovePoints.length > 50) {
+            let i = handMovePoints.length / 2;
+            while (i > 0) {
+              handMovePoints.shift();
+              --i;
+            }
+          }
+
+          let handMoveDirectionX;
+          let handMoveDirectionY;
+
+          let shiftX = videoWidth * 0.01;
+          let shiftY = videoHeight * 0.01;
+          let inverseShiftX = -shiftX;
+          let inverseShiftY = -shiftY;
+
+          if (handMovePoints.length > 1) {
+            if (handMovePoints[handMovePoints.length - 1][0] - handMovePoints[handMovePoints.length - 2][0] > shiftX) {
+              handMoveDirectionX = directions.RIGHT;
+            }
+            else if (handMovePoints[handMovePoints.length - 1][0] - handMovePoints[handMovePoints.length - 2][0] < inverseShiftX) {
+              handMoveDirectionX = directions.LEFT;
+            }
+            else {
+              handMoveDirectionX = directions.STATIC;
+            }
+            if (handMovePoints[handMovePoints.length - 1][1] - handMovePoints[handMovePoints.length - 2][1] > shiftY) {
+              handMoveDirectionY = directions.DOWN;
+            }
+            else if (handMovePoints[handMovePoints.length - 1][1] - handMovePoints[handMovePoints.length - 2][1] < inverseShiftY) {
+              handMoveDirectionY = directions.UP;
+            }
+            else {
+              handMoveDirectionY = directions.STATIC;
+            }
+
+            if (handDirections.x.length > 0 && handDirections.y.length > 0) {
+              if (handDirections.x[handDirections.x.length - 1] !== handMoveDirectionX) {
+                handDirections.x.push(handMoveDirectionX);
+                handDirections.y.push(handMoveDirectionY);
+              }
+
+              if (handDirections.y[handDirections.y.length - 1] !== handMoveDirectionY) {
+                handDirections.x.push(handMoveDirectionX);
+                handDirections.y.push(handMoveDirectionY);
+              }
+            }
+            else {
+              handDirections.x.push(handMoveDirectionX);
+              handDirections.y.push(handMoveDirectionY);
+            }
+
+            let figure = figures.NONE;
+
+            if (handDirections.x.length > 1 && handDirections.y.length > 1 && lastFigure !== figures.CIRCLE) {
+              if ((handDirections.y[handDirections.y.length - 1] !== handDirections.y[handDirections.y.length - 2] ||
+                  handDirections.x[handDirections.x.length - 1] !== handDirections.x[handDirections.x.length - 2]) &&
+                  handDirections.y[handDirections.y.length - 1] !== directions.STATIC &&
+                  handDirections.y[handDirections.y.length - 2] !== directions.STATIC &&
+                  handDirections.x[handDirections.x.length - 1] !== directions.STATIC) {
+                figure = figures.SEMICIRCLE;
+              }
+            }
+
+            if (handDirections.x.length > 4 && handDirections.y.length > 4) {
+              let flag = true;
+
+              for (let i = 1; i < 2; ++i) {
+                if (handDirections.x[handDirections.x.length - i] ===
+                    handDirections.x[handDirections.x.length - (i + 2)] &&
+                    handDirections.y[handDirections.y.length - i] ===
+                    handDirections.y[handDirections.y.length - (i + 2)]) {
+                  flag = false;
+                }
+              }
+
+              for (let i = 1; i < 5; ++i) {
+                if (handDirections.x[handDirections.x.length - i] === directions.STATIC &&
+                    handDirections.y[handDirections.y.length - i] === directions.STATIC) {
+                  flag = false;
+                }
+              }
+
+              if (flag) {
+                figure = figures.CIRCLE;
+              }
+            }
+
+            lastFigure = figure;
+
+            console.log(figure);
+
+            if (handDirections.x.length > 50 && handDirections.y.length > 50) {
+              for (let i = (handDirections.x.length + handDirections.y.length) / 4; i > 0; --i) {
+                handDirections.x.shift();
+                handDirections.y.shift();
+              }
+            }
+          }
         }
       }
       const ctx = canvasRef.current.getContext("2d");
