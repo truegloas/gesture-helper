@@ -1,31 +1,33 @@
-// TODO
-// 0. Install fingerpose npm install fingerpose
-// 1. Add Use State
-// 2. Import symbols and finger pose import * as fp from "fingerpose";
-// 3. Setup hook and symbol object
-// 4. Update detect function for gesture handling
-// 5. Add symbol display to the screen DONE
-// 6. Add textarea for write any recognited objects DONE
-// 7. Solve continuous problem with endless recognizing
-// 8. Add first symbol to recognize
-// 9. Add btns for start|end recognize and for clear textarea
-
 import React, { useRef, useState } from "react";
 import * as tf from "@tensorflow/tfjs";
 import * as handpose from "@tensorflow-models/handpose";
 import Webcam from "react-webcam";
 import "./App.css";
-import { drawHand } from "./utilities";
+import { drawHand, FigurePredictor, fingerJoints, findTheMostCommonLetter, clearArray } from "./utilities";
 import * as fp from "fingerpose";
 import * as ag from "./alphabet-gestures/export";
 
 
 let text = '';
 let symbol = '';
-let predictionText = '';
+let processingSymbol = '';
+
+let previousCheckTime = null;
+
+let predictedSymbols = [];
+
+let letters = [];
+for (let i = 1072; i < 1104; ++i) {
+  letters.push(ag["letter" + i]);
+}
+letters.push(ag.letter1105);
+
+const LIMITPREDICTEDSYMBOLS = 20;
+
+const lettersUsingForDynamicArray = ['д', 'е', 'и', 'к', 'х', 'ц', 'ш', 'ъ', 'ь', 'э'];
+
 
 function App() {
-
   const webcamRef = useRef(null);
   const canvasRef = useRef(null);
   const textareaRef = useRef(null);
@@ -33,189 +35,297 @@ function App() {
   const buttonRef = useRef(null);
 
   const runHandpose = async () => {
+
     const net = await handpose.load();
     console.log("Handpose model loaded.");
+
+    const video = webcamRef.current.video;
+
+    const videoWidth = webcamRef.current.video.videoWidth;
+    const videoHeight = webcamRef.current.video.videoHeight;
+
+    let figurePredictor = new FigurePredictor(videoWidth, videoHeight);
+
     setInterval(() => {
-      detect(net);
+      if (
+        typeof webcamRef.current !== "undefined" &&
+        webcamRef.current !== null &&
+        webcamRef.current.video.readyState === 4
+      ) {
+        canvasRef.current.width = videoWidth;
+        canvasRef.current.height = videoHeight;
+        detect(net, video, figurePredictor);
+      } else {
+        textareaRef.current.placeholder = 'Необходимо подключить камеру';
+      }
     }, 100);
   };
 
-  const directions = {
-    STATIC: 0,
-    UP: 1,
-    RIGHT: 2,
-    DOWN: 3,
-    LEFT: 4
-  }
+  const detect = async (net, video, figurePredictor) => {
+    const hand = await net.estimateHands(video);
 
-  const figures = {
-    NONE: 0,
-    SEMICIRCLE: 1,
-    CIRCLE: 2,
-  }
+    if (hand.length > 0) {
+      const GE = new fp.GestureEstimator(letters);
+      const gesture = await GE.estimate(hand[0].landmarks, 4);
 
-  let handMovePoints = [];
-  let handDirections = {
-    x: [],
-    y: []
-  };
-  let lastFigure;
+      console.log('----------describe----------');
 
-  const detect = async (net) => {
-    if (
-      typeof webcamRef.current !== "undefined" &&
-      webcamRef.current !== null &&
-      webcamRef.current.video.readyState === 4
-    ) {
-      const video = webcamRef.current.video;
-      const videoWidth = webcamRef.current.video.videoWidth;
-      const videoHeight = webcamRef.current.video.videoHeight;
+      // console.log('Gestures data');
+      //
+      // for (let i = 0; i < gesture.poseData.length; ++i) {
+      //   console.log(gesture.poseData[i]);
+      // }
+      //
+      // for (let i = 0; i < gesture.gestures.length; ++i) {
+      //   console.log(gesture.gestures[i]);
+      // }
 
-      webcamRef.current.video.width = videoWidth;
-      webcamRef.current.video.height = videoHeight;
+      if (gesture.gestures.length > 0) {
+        const confidence = gesture.gestures.map(
+          (prediction) => prediction.confidence
+        );
+        const maxConfidence = confidence.indexOf(
+          Math.max.apply(null, confidence)
+        );
 
-      canvasRef.current.width = videoWidth;
-      canvasRef.current.height = videoHeight;
+        symbol = gesture.gestures[maxConfidence].name;
 
-      const hand = await net.estimateHands(video);
+        if (symbol !== ('д' || 'ц' || 'ь' || 'ъ' || 'к') ||
+            processingSymbol !== (('д' || 'ц' || 'ь' || 'ъ' || 'к'))) {
 
-      let letters = [];
-      for (let i = 1072; i < 1104; ++i) {
-        letters.push(ag["letter" + i]);
-      }
-      letters.push(ag.letter1105);
+          predictedSymbols.push(symbol);
+        }
 
-      if (hand.length > 0) {
-        const GE = new fp.GestureEstimator(letters);
-        const gesture = await GE.estimate(hand[0].landmarks, 4);
+        console.log('Current symbol: ' + symbol);
 
-        console.log('----------describe----------');
+        if (lettersUsingForDynamicArray.includes(symbol) || processingSymbol !== '') {
+          if (processingSymbol === '') {
+            processingSymbol = symbol;
+          }
 
-        if (gesture.gestures !== undefined && gesture.gestures.length > 0) {
+          console.log('Processing symbol: ' + processingSymbol);
 
-          const confidence = gesture.gestures.map(
-            (prediction) => prediction.confidence
-          );
-          const maxConfidence = confidence.indexOf(
-            Math.max.apply(null, confidence)
-          );
+          let predictedDirection;
+          let predictedFigure;
 
-          symbol = gesture.gestures[maxConfidence].name;
+          function processDirections(fingerDot, resultSymbol, directionToRecognize) {
+            let checkTime = new Date();
 
-          if (symbol === null) {
-            textareaPredictionRef.current.placeholder = 'Ничего не распознано';
+            figurePredictor.predictDirection(hand[0].landmarks[fingerDot]);
+            if (directionToRecognize === FigurePredictor.directions.LEFT ||
+                directionToRecognize === FigurePredictor.directions.RIGHT) {
+              predictedDirection = figurePredictor.handDirections.x[figurePredictor.handDirections.x.length - 1];
+            } else {
+              predictedDirection = figurePredictor.handDirections.y[figurePredictor.handDirections.y.length - 1];
+            }
+
+            if (previousCheckTime === null) {
+              previousCheckTime = checkTime;
+            }
+
+            if (predictedDirection === directionToRecognize) {
+
+              previousCheckTime = null;
+              processingSymbol = '';
+
+              clearArray(predictedSymbols);
+              figurePredictor.clearHandDirections();
+
+              return resultSymbol;
+
+            } else if (
+                (predictedDirection !== directionToRecognize && (
+                figurePredictor.handDirections.x >= 1 ||
+                figurePredictor.handDirections.y >= 1)
+                ) ||
+                checkTime.getSeconds() - previousCheckTime.getSeconds() > 1
+            ) {
+
+              previousCheckTime = null;
+              processingSymbol = '';
+
+              clearArray(predictedSymbols);
+              figurePredictor.clearHandDirections();
+            }
+
+            return '';
+          }
+
+          const CHECKTIMELIMIT = 1;
+
+          let checkTime;
+          let predictedDirectionYForIndexFinger;
+          let predictedDirectionXForThumbFinger;
+          let differenceOfTime;
+
+          switch (processingSymbol) {
+            case 'д':
+              predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerJoints.indexFinger[1]]);
+              predictedDirectionYForIndexFinger = figurePredictor.handDirections.y[figurePredictor.handDirections.y.length - 1];
+
+              checkTime = new Date();
+
+              if (previousCheckTime === null) {
+                previousCheckTime = checkTime;
+              }
+
+              differenceOfTime = checkTime.getSeconds() - previousCheckTime.getSeconds();
+
+              if (predictedFigure === FigurePredictor.figures.CIRCLE) {
+                text += processingSymbol;
+
+                processingSymbol = '';
+
+                clearArray(predictedSymbols);
+                figurePredictor.clearHandDirections();
+
+              } else if (differenceOfTime > CHECKTIMELIMIT) {
+
+                if (predictedDirectionYForIndexFinger === FigurePredictor.directions.DOWN) {
+
+                  processingSymbol = 'к';
+
+                } else if (predictedFigure !== FigurePredictor.figures.CIRCLE &&
+                    figurePredictor.handDirections.x >= 3 &&
+                    figurePredictor.handDirections.y >= 3) {
+
+                  processingSymbol = '';
+                }
+
+                clearArray(predictedSymbols);
+                figurePredictor.clearHandDirections();
+              }
+              break;
+            case 'е':
+              text += processDirections(fingerJoints.pinkyFinger[1], 'ё', FigurePredictor.directions.LEFT);
+              break;
+            case 'и':
+              text += processDirections(fingerJoints.pinkyFinger[1], 'й', FigurePredictor.directions.LEFT);
+              break;
+            case 'к':
+              let result = processDirections(fingerJoints.middleFinger[0], processingSymbol, FigurePredictor.directions.DOWN);
+              if (result === '') {
+                text += 'к';
+              } else {
+                processingSymbol = 'ц';
+              }
+              break;
+            case 'х':
+              predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerJoints.indexFinger[1]]);
+
+              checkTime = new Date();
+
+              if (previousCheckTime === null) {
+                previousCheckTime = checkTime;
+              }
+
+              if (predictedFigure === FigurePredictor.figures.SEMICIRCLE &&
+                  figurePredictor.handDirections.x >= 3) {
+                text += 'з';
+
+                processingSymbol = '';
+
+                clearArray(predictedSymbols);
+                figurePredictor.clearHandDirections();
+
+              } else if ((predictedFigure !== FigurePredictor.figures.SEMICIRCLE &&
+                  figurePredictor.handDirections.x >= 3) ||
+                  checkTime.getSeconds() - previousCheckTime.getSeconds() > 3) {
+
+                processingSymbol = '';
+
+                clearArray(predictedSymbols);
+                figurePredictor.clearHandDirections();
+              }
+              break;
+            case 'ц':
+              text += processDirections(fingerJoints.middleFinger[0], processingSymbol, FigurePredictor.directions.DOWN);
+              break;
+            case 'ш':
+              text += processDirections(fingerJoints.middleFinger[1], 'щ', FigurePredictor.directions.DOWN);
+              break;
+            case 'э':
+              predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerJoints.thumbFinger[1]]);
+              predictedDirectionXForThumbFinger = figurePredictor.handDirections.x[figurePredictor.handDirections.x.length - 1];
+
+              checkTime = new Date();
+
+              if (previousCheckTime === null) {
+                previousCheckTime = checkTime;
+              }
+
+              differenceOfTime = checkTime.getSeconds() - previousCheckTime.getSeconds();
+
+              console.log('Predicted Figure: ' + predictedFigure);
+              console.log('Predicted Direction: ' + predictedDirectionXForThumbFinger);
+
+                if (predictedFigure === FigurePredictor.figures.SEMICIRCLE) {
+                  console.log('I\'m here2');
+                  if (predictedDirectionXForThumbFinger === FigurePredictor.directions.RIGHT) {
+                    text += 'ь';
+                  } else if (predictedDirectionXForThumbFinger === FigurePredictor.directions.LEFT) {
+                    text += 'ъ';
+                  }
+
+                  processingSymbol = '';
+
+                  clearArray(predictedSymbols);
+                  figurePredictor.clearHandDirections();
+
+                } else if (figurePredictor.handDirections.x >=3) {
+                  if (predictedDirectionXForThumbFinger === FigurePredictor.directions.LEFT ||
+                      predictedDirectionXForThumbFinger === FigurePredictor.directions.RIGHT) {
+
+                    text += processingSymbol;
+                    clearArray(predictedSymbols);
+                    figurePredictor.clearHandDirections();
+
+                  } else if ((predictedFigure !== FigurePredictor.figures.SEMICIRCLE &&
+                      figurePredictor.handDirections.x >= 3 ||
+                      figurePredictor.handDirections.y >= 3) ||
+                      differenceOfTime > CHECKTIMELIMIT) {
+
+                    processingSymbol = '';
+                    clearArray(predictedSymbols);
+                    figurePredictor.clearHandDirections();
+                  }
+                }
+              break;
+            default:
+              processingSymbol = '';
+          }
+          textareaRef.current.placeholder = text;
+        }
+
+        let specifySymbol = '';
+        if (predictedSymbols.length < LIMITPREDICTEDSYMBOLS) {
+
+          textareaPredictionRef.current.placeholder = 'Подготовка';
+        } else {
+          if (processingSymbol !== '') {
+
+            specifySymbol = findTheMostCommonLetter(predictedSymbols)
+            if (specifySymbol) {
+              processingSymbol = '';
+            }
           } else {
-            textareaPredictionRef.current.placeholder = symbol;
-          }
+            specifySymbol = findTheMostCommonLetter(predictedSymbols);
+            textareaPredictionRef.current.placeholder = specifySymbol === null ? 'Ничего не распознано' : specifySymbol;
 
-          handMovePoints.push(hand[0].landmarks[0]);
-
-          if (handMovePoints.length > 50) {
-            let i = handMovePoints.length / 2;
-            while (i > 0) {
-              handMovePoints.shift();
-              --i;
-            }
-          }
-
-          let handMoveDirectionX;
-          let handMoveDirectionY;
-
-          let shiftX = videoWidth * 0.01;
-          let shiftY = videoHeight * 0.01;
-          let inverseShiftX = -shiftX;
-          let inverseShiftY = -shiftY;
-
-          if (handMovePoints.length > 1) {
-            if (handMovePoints[handMovePoints.length - 1][0] - handMovePoints[handMovePoints.length - 2][0] > shiftX) {
-              handMoveDirectionX = directions.RIGHT;
-            }
-            else if (handMovePoints[handMovePoints.length - 1][0] - handMovePoints[handMovePoints.length - 2][0] < inverseShiftX) {
-              handMoveDirectionX = directions.LEFT;
-            }
-            else {
-              handMoveDirectionX = directions.STATIC;
-            }
-            if (handMovePoints[handMovePoints.length - 1][1] - handMovePoints[handMovePoints.length - 2][1] > shiftY) {
-              handMoveDirectionY = directions.DOWN;
-            }
-            else if (handMovePoints[handMovePoints.length - 1][1] - handMovePoints[handMovePoints.length - 2][1] < inverseShiftY) {
-              handMoveDirectionY = directions.UP;
-            }
-            else {
-              handMoveDirectionY = directions.STATIC;
-            }
-
-            if (handDirections.x.length > 0 && handDirections.y.length > 0) {
-              if (handDirections.x[handDirections.x.length - 1] !== handMoveDirectionX) {
-                handDirections.x.push(handMoveDirectionX);
-                handDirections.y.push(handMoveDirectionY);
-              }
-
-              if (handDirections.y[handDirections.y.length - 1] !== handMoveDirectionY) {
-                handDirections.x.push(handMoveDirectionX);
-                handDirections.y.push(handMoveDirectionY);
-              }
-            }
-            else {
-              handDirections.x.push(handMoveDirectionX);
-              handDirections.y.push(handMoveDirectionY);
-            }
-
-            let figure = figures.NONE;
-
-            if (handDirections.x.length > 1 && handDirections.y.length > 1 && lastFigure !== figures.CIRCLE) {
-              if ((handDirections.y[handDirections.y.length - 1] !== handDirections.y[handDirections.y.length - 2] ||
-                  handDirections.x[handDirections.x.length - 1] !== handDirections.x[handDirections.x.length - 2]) &&
-                  handDirections.y[handDirections.y.length - 1] !== directions.STATIC &&
-                  handDirections.y[handDirections.y.length - 2] !== directions.STATIC &&
-                  handDirections.x[handDirections.x.length - 1] !== directions.STATIC) {
-                figure = figures.SEMICIRCLE;
-              }
-            }
-
-            if (handDirections.x.length > 4 && handDirections.y.length > 4) {
-              let flag = true;
-
-              for (let i = 1; i < 2; ++i) {
-                if (handDirections.x[handDirections.x.length - i] ===
-                    handDirections.x[handDirections.x.length - (i + 2)] &&
-                    handDirections.y[handDirections.y.length - i] ===
-                    handDirections.y[handDirections.y.length - (i + 2)]) {
-                  flag = false;
-                }
-              }
-
-              for (let i = 1; i < 5; ++i) {
-                if (handDirections.x[handDirections.x.length - i] === directions.STATIC &&
-                    handDirections.y[handDirections.y.length - i] === directions.STATIC) {
-                  flag = false;
-                }
-              }
-
-              if (flag) {
-                figure = figures.CIRCLE;
-              }
-            }
-
-            lastFigure = figure;
-
-            console.log(figure);
-
-            if (handDirections.x.length > 50 && handDirections.y.length > 50) {
-              for (let i = (handDirections.x.length + handDirections.y.length) / 4; i > 0; --i) {
-                handDirections.x.shift();
-                handDirections.y.shift();
-              }
-            }
+            setTimeout(() => {
+              console.log('Hello, after 1 sec');
+            }, 1000);
           }
         }
+
+        text += specifySymbol;
+        textareaRef.current.placeholder = text;
       }
-      const ctx = canvasRef.current.getContext("2d");
-      drawHand(hand, ctx);
     } else {
-      textareaRef.current.placeholder = 'Необходимо подключить камеру';
+      clearArray(predictedSymbols);
     }
+    const ctx = canvasRef.current.getContext("2d");
+    drawHand(hand, ctx);
   };
 
   return (
@@ -253,24 +363,24 @@ function App() {
           <button className='App-header_button'
             ref={buttonRef}
             onClick={() => {
-              text += symbol
-              textareaRef.current.placeholder = text;
-            }}
-          >Вставить распознанный символ</button>
-          <button className='App-header_button'
-            ref={buttonRef}
-            onClick={() => {
               text += ' ';
               textareaRef.current.placeholder = text;
             }}
           >Вставить пробел</button>
-          <button className='App-header_button App-header_button--last'
+          <button className='App-header_button'
             ref={buttonRef}
             onClick={() => {
               text = '';
               textareaRef.current.placeholder = text;
             }}
             >Очистить поле с текстом</button>
+          <button className='App-header_button'
+                  ref={buttonRef}
+                  onClick={() => {
+                    text = text.replace(text[text.length - 1], '');
+                    textareaRef.current.placeholder = text;
+                  }}
+          >Удалить последний символ</button>
         </div>
       </header>
 

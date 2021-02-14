@@ -13,11 +13,11 @@
   color: white;
 }
 
-.App-header_canvas{
+.App-header_canvas {
   position: absolute;
   margin-left: auto;
   margin-right: auto;
-  top: 128px;
+  top: 5vh;
   left: 0;
   right: 0;
   text-align: center;
@@ -60,21 +60,19 @@
 
 .App-header_button-container {
   display: grid;
-  grid-template-rows: 1fr 1fr;
-  grid-template-columns: 1fr 2fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr 1fr ;
+  grid-template-columns: 1fr;
   grid-auto-rows: auto;
   grid-auto-columns: auto;
 
   width: 640px;
-  height: 100px;
+  height: auto;
 }
 
 .App-header_button {
-  font-size: 16px;
+  font-size: 24px;
   width: auto;
-}
 
-.App-header_button--last{
-  grid-column-start: 2;
-  grid-column-end: 3;
+  padding: 10px;
+  margin-bottom: 10px;
 }
