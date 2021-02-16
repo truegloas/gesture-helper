@@ -1,6 +1,5 @@
 import * as fp from 'fingerpose';
 import { addDirection } from "../utils";
-import letter1083Description from "./letter1083";
 
 
 const letter1096Description = new fp.GestureDescription('ш');

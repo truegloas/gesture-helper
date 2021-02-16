@@ -3,28 +3,9 @@ import * as tf from "@tensorflow/tfjs";
 import * as handpose from "@tensorflow-models/handpose";
 import Webcam from "react-webcam";
 import "./App.css";
-import { drawHand, FigurePredictor, fingerJoints, findTheMostCommonLetter, clearArray } from "./utilities";
+import { drawHand, FigurePredictor, fingerJoints, findTheMostCommonLetter, clearArray, directions, figures } from "./utilities";
 import * as fp from "fingerpose";
 import * as ag from "./alphabet-gestures/export";
-
-
-let text = '';
-let symbol = '';
-let processingSymbol = '';
-
-let previousCheckTime = null;
-
-let predictedSymbols = [];
-
-let letters = [];
-for (let i = 1072; i < 1104; ++i) {
-  letters.push(ag["letter" + i]);
-}
-letters.push(ag.letter1105);
-
-const LIMITPREDICTEDSYMBOLS = 20;
-
-const lettersUsingForDynamicArray = ['д', 'е', 'и', 'к', 'х', 'ц', 'ш', 'ъ', 'ь', 'э'];
 
 
 function App() {
@@ -33,6 +14,24 @@ function App() {
   const textareaRef = useRef(null);
   const textareaPredictionRef = useRef(null);
   const buttonRef = useRef(null);
+
+  const LIMITPREDICTEDSYMBOLS = 20;
+
+  const lettersUsingForDynamicArray = ['д', 'е', 'и', 'к', 'х', 'ц', 'ш', 'ъ', 'ь', 'э'];
+
+  let text = '';
+  let symbol = '';
+  let processingSymbol = '';
+
+  let previousCheckTime = null;
+
+  let predictedSymbols = [];
+  let letters = [];
+  for (let i = 1072; i < 1104; ++i) {
+    letters.push(ag["letter" + i]);
+  }
+
+  letters.push(ag.letter1105);
 
   const runHandpose = async () => {
 
@@ -70,20 +69,30 @@ function App() {
 
       console.log('----------describe----------');
 
-      // console.log('Gestures data');
-      //
-      // for (let i = 0; i < gesture.poseData.length; ++i) {
-      //   console.log(gesture.poseData[i]);
-      // }
-      //
-      // for (let i = 0; i < gesture.gestures.length; ++i) {
-      //   console.log(gesture.gestures[i]);
-      // }
+      function getFingerDifferenceOnDimension(fingerDot1, fingerDot2, dimension) {
+        if (dimension === 'x') {
+          dimension = 0;
+        } else if (dimension === 'y') {
+          dimension = 1;
+        } else if (dimension === 'z') {
+          dimension = 2;
+        }
+
+        return hand[0].landmarks[fingerDot1][dimension] < hand[0].landmarks[fingerDot2][dimension];
+      }
+
+      let isRightHand = () => {
+        let differenceOnX = getFingerDifferenceOnDimension(fingerJoints.pinkyFinger[1], fingerJoints.thumbFinger[1], 'x');
+        let differenceOnZ = getFingerDifferenceOnDimension(fingerJoints.pinkyFinger[1], fingerJoints.pinkyFinger[0], 'z');
+
+        return differenceOnX === differenceOnZ;
+      }
 
       if (gesture.gestures.length > 0) {
         const confidence = gesture.gestures.map(
           (prediction) => prediction.confidence
         );
+
         const maxConfidence = confidence.indexOf(
           Math.max.apply(null, confidence)
         );
@@ -99,21 +108,23 @@ function App() {
         console.log('Current symbol: ' + symbol);
 
         if (lettersUsingForDynamicArray.includes(symbol) || processingSymbol !== '') {
+
           if (processingSymbol === '') {
             processingSymbol = symbol;
           }
 
           console.log('Processing symbol: ' + processingSymbol);
-
           let predictedDirection;
+
           let predictedFigure;
 
           function processDirections(fingerDot, resultSymbol, directionToRecognize) {
             let checkTime = new Date();
 
             figurePredictor.predictDirection(hand[0].landmarks[fingerDot]);
-            if (directionToRecognize === FigurePredictor.directions.LEFT ||
-                directionToRecognize === FigurePredictor.directions.RIGHT) {
+
+            if (directionToRecognize === directions.LEFT ||
+                directionToRecognize === directions.RIGHT) {
               predictedDirection = figurePredictor.handDirections.x[figurePredictor.handDirections.x.length - 1];
             } else {
               predictedDirection = figurePredictor.handDirections.y[figurePredictor.handDirections.y.length - 1];
@@ -133,13 +144,7 @@ function App() {
 
               return resultSymbol;
 
-            } else if (
-                (predictedDirection !== directionToRecognize && (
-                figurePredictor.handDirections.x >= 1 ||
-                figurePredictor.handDirections.y >= 1)
-                ) ||
-                checkTime.getSeconds() - previousCheckTime.getSeconds() > 1
-            ) {
+            } else if (checkTime.getSeconds() - previousCheckTime.getSeconds() > 1) {
 
               previousCheckTime = null;
               processingSymbol = '';
@@ -151,145 +156,97 @@ function App() {
             return '';
           }
 
-          const CHECKTIMELIMIT = 1;
+          function processCircles (fingerDot, cooldownInSeconds, resultSymbol) {
+            predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerDot]);
+
+            checkTime = new Date();
+
+            if (previousCheckTime === null) {
+              previousCheckTime = checkTime;
+            }
+
+            if (predictedFigure === figures.CIRCLE) {
+
+              previousCheckTime = null;
+              processingSymbol = '';
+
+              clearArray(predictedSymbols);
+              figurePredictor.clearHandDirections();
+
+              return resultSymbol;
+
+            } else if (checkTime.getSeconds() - previousCheckTime.getSeconds() > cooldownInSeconds) {
+
+              previousCheckTime = null;
+              processingSymbol = '';
+
+              clearArray(predictedSymbols);
+              figurePredictor.clearHandDirections();
+            }
+
+            return '';
+          }
 
           let checkTime;
-          let predictedDirectionYForIndexFinger;
-          let predictedDirectionXForThumbFinger;
-          let differenceOfTime;
 
           switch (processingSymbol) {
             case 'д':
-              predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerJoints.indexFinger[1]]);
-              predictedDirectionYForIndexFinger = figurePredictor.handDirections.y[figurePredictor.handDirections.y.length - 1];
-
-              checkTime = new Date();
-
-              if (previousCheckTime === null) {
-                previousCheckTime = checkTime;
+              if (getFingerDifferenceOnDimension(fingerJoints.pinkyFinger[4], fingerJoints.indexFinger[4], 'z')) {
+                processingSymbol = 'к';
+                break;
               }
 
-              differenceOfTime = checkTime.getSeconds() - previousCheckTime.getSeconds();
-
-              if (predictedFigure === FigurePredictor.figures.CIRCLE) {
-                text += processingSymbol;
-
-                processingSymbol = '';
-
-                clearArray(predictedSymbols);
-                figurePredictor.clearHandDirections();
-
-              } else if (differenceOfTime > CHECKTIMELIMIT) {
-
-                if (predictedDirectionYForIndexFinger === FigurePredictor.directions.DOWN) {
-
-                  processingSymbol = 'к';
-
-                } else if (predictedFigure !== FigurePredictor.figures.CIRCLE &&
-                    figurePredictor.handDirections.x >= 3 &&
-                    figurePredictor.handDirections.y >= 3) {
-
-                  processingSymbol = '';
-                }
-
-                clearArray(predictedSymbols);
-                figurePredictor.clearHandDirections();
+              if (getFingerDifferenceOnDimension(fingerJoints.pinkyFinger[4], fingerJoints.indexFinger[4], 'z')) {
+                processingSymbol = 'ц';
+                break;
               }
+
+              text += processCircles(fingerJoints.indexFinger[4], 2, processingSymbol);
+
               break;
             case 'е':
-              text += processDirections(fingerJoints.pinkyFinger[1], 'ё', FigurePredictor.directions.LEFT);
+              text += processDirections(fingerJoints.pinkyFinger[2], 'ё', directions.LEFT);
               break;
             case 'и':
-              text += processDirections(fingerJoints.pinkyFinger[1], 'й', FigurePredictor.directions.LEFT);
+              text += processDirections(fingerJoints.pinkyFinger[4], 'й', directions.LEFT);
               break;
             case 'к':
-              let result = processDirections(fingerJoints.middleFinger[0], processingSymbol, FigurePredictor.directions.DOWN);
-              if (result === '') {
-                text += 'к';
-              } else {
-                processingSymbol = 'ц';
-              }
+              text += processDirections(fingerJoints.middleFinger[4], processingSymbol, directions.DOWN);
               break;
             case 'х':
-              predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerJoints.indexFinger[1]]);
-
-              checkTime = new Date();
-
-              if (previousCheckTime === null) {
-                previousCheckTime = checkTime;
-              }
-
-              if (predictedFigure === FigurePredictor.figures.SEMICIRCLE &&
-                  figurePredictor.handDirections.x >= 3) {
-                text += 'з';
-
-                processingSymbol = '';
-
-                clearArray(predictedSymbols);
-                figurePredictor.clearHandDirections();
-
-              } else if ((predictedFigure !== FigurePredictor.figures.SEMICIRCLE &&
-                  figurePredictor.handDirections.x >= 3) ||
-                  checkTime.getSeconds() - previousCheckTime.getSeconds() > 3) {
-
-                processingSymbol = '';
-
-                clearArray(predictedSymbols);
-                figurePredictor.clearHandDirections();
-              }
+              text += processCircles(fingerJoints.indexFinger[2], 3, 'з');
               break;
             case 'ц':
-              text += processDirections(fingerJoints.middleFinger[0], processingSymbol, FigurePredictor.directions.DOWN);
+              text += processDirections(fingerJoints.middleFinger[1], processingSymbol, directions.DOWN);
               break;
             case 'ш':
-              text += processDirections(fingerJoints.middleFinger[1], 'щ', FigurePredictor.directions.DOWN);
+              text += processDirections(fingerJoints.middleFinger[1], 'щ', directions.DOWN);
               break;
             case 'э':
-              predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerJoints.thumbFinger[1]]);
-              predictedDirectionXForThumbFinger = figurePredictor.handDirections.x[figurePredictor.handDirections.x.length - 1];
-
-              checkTime = new Date();
-
-              if (previousCheckTime === null) {
-                previousCheckTime = checkTime;
-              }
-
-              differenceOfTime = checkTime.getSeconds() - previousCheckTime.getSeconds();
-
-              console.log('Predicted Figure: ' + predictedFigure);
-              console.log('Predicted Direction: ' + predictedDirectionXForThumbFinger);
-
-                if (predictedFigure === FigurePredictor.figures.SEMICIRCLE) {
-                  console.log('I\'m here2');
-                  if (predictedDirectionXForThumbFinger === FigurePredictor.directions.RIGHT) {
-                    text += 'ь';
-                  } else if (predictedDirectionXForThumbFinger === FigurePredictor.directions.LEFT) {
-                    text += 'ъ';
-                  }
-
-                  processingSymbol = '';
-
-                  clearArray(predictedSymbols);
-                  figurePredictor.clearHandDirections();
-
-                } else if (figurePredictor.handDirections.x >=3) {
-                  if (predictedDirectionXForThumbFinger === FigurePredictor.directions.LEFT ||
-                      predictedDirectionXForThumbFinger === FigurePredictor.directions.RIGHT) {
-
-                    text += processingSymbol;
-                    clearArray(predictedSymbols);
-                    figurePredictor.clearHandDirections();
-
-                  } else if ((predictedFigure !== FigurePredictor.figures.SEMICIRCLE &&
-                      figurePredictor.handDirections.x >= 3 ||
-                      figurePredictor.handDirections.y >= 3) ||
-                      differenceOfTime > CHECKTIMELIMIT) {
-
-                    processingSymbol = '';
-                    clearArray(predictedSymbols);
-                    figurePredictor.clearHandDirections();
-                  }
+              if (getFingerDifferenceOnDimension(fingerJoints.indexFinger[4], fingerJoints.pinkyFinger[1], 'z')) {
+                if (getFingerDifferenceOnDimension(fingerJoints.indexFinger[4], fingerJoints.middleFinger[2], 'y')) {
+                  processingSymbol = 'ъ';
+                } else {
+                  processingSymbol = 'ь';
                 }
+                break;
+              }
+              text += processDirections(fingerJoints.thumbFinger[1], processingSymbol, directions.RIGHT);
+              text += processDirections(fingerJoints.thumbFinger[1], processingSymbol, directions.LEFT);
+              break;
+            case 'ъ':
+              if (isRightHand()) {
+                text += processDirections(fingerJoints.thumbFinger[4], processingSymbol, directions.LEFT);
+              } else {
+                text += processDirections(fingerJoints.thumbFinger[4], processingSymbol, directions.RIGHT);
+              }
+              break;
+            case 'ь':
+              if (isRightHand()) {
+                text += processDirections(fingerJoints.thumbFinger[4], processingSymbol, directions.LEFT);
+              } else {
+                text += processDirections(fingerJoints.thumbFinger[4], processingSymbol, directions.RIGHT);
+              }
               break;
             default:
               processingSymbol = '';
@@ -311,10 +268,6 @@ function App() {
           } else {
             specifySymbol = findTheMostCommonLetter(predictedSymbols);
             textareaPredictionRef.current.placeholder = specifySymbol === null ? 'Ничего не распознано' : specifySymbol;
-
-            setTimeout(() => {
-              console.log('Hello, after 1 sec');
-            }, 1000);
           }
         }
 

@@ -6,6 +6,22 @@ export const fingerJoints = {
   pinkyFinger: [0, 17, 18, 19, 20],
 };
 
+export const directions = {
+  STATIC: 0,
+  UP: 1,
+  RIGHT: 2,
+  DOWN: 3,
+  LEFT: 4,
+  FORWARD: 5,
+  BACK: 6
+}
+
+export const figures = {
+  NONE: 0,
+  SEMICIRCLE: 1,
+  CIRCLE: 2,
+}
+
 const style = {
   0: { color: "yellow", size: 15 },
   1: { color: "gold", size: 6 },
@@ -37,23 +53,6 @@ export function clearArray(array) {
 }
 
 export class FigurePredictor {
-
-  static directions = {
-    STATIC: 0,
-    UP: 1,
-    RIGHT: 2,
-    DOWN: 3,
-    LEFT: 4,
-    FORWARD: 5,
-    BACK: 6
-  }
-
-  static figures = {
-    NONE: 0,
-    SEMICIRCLE: 1,
-    CIRCLE: 2,
-  }
-
   constructor(videoWidth, videoHeight) {
     this.handMovePoints = [];
     this.handDirections = {
@@ -98,25 +97,25 @@ export class FigurePredictor {
 
     if (this.handMovePoints.length > 1) {
       if (this.handMovePoints[this.handMovePoints.length - 1][0] - this.handMovePoints[this.handMovePoints.length - 2][0] > shiftX) {
-        handMoveDirectionX = FigurePredictor.directions.RIGHT;
+        handMoveDirectionX = directions.RIGHT;
       } else if (this.handMovePoints[this.handMovePoints.length - 1][0] - this.handMovePoints[this.handMovePoints.length - 2][0] < inverseShiftX) {
-        handMoveDirectionX = FigurePredictor.directions.LEFT;
+        handMoveDirectionX = directions.LEFT;
       } else {
-        handMoveDirectionX = FigurePredictor.directions.STATIC;
+        handMoveDirectionX = directions.STATIC;
       }
       if (this.handMovePoints[this.handMovePoints.length - 1][1] - this.handMovePoints[this.handMovePoints.length - 2][1] > shiftY) {
-        handMoveDirectionY = FigurePredictor.directions.DOWN;
+        handMoveDirectionY = directions.DOWN;
       } else if (this.handMovePoints[this.handMovePoints.length - 1][1] - this.handMovePoints[this.handMovePoints.length - 2][1] < inverseShiftY) {
-        handMoveDirectionY = FigurePredictor.directions.UP;
+        handMoveDirectionY = directions.UP;
       } else {
-        handMoveDirectionY = FigurePredictor.directions.STATIC;
+        handMoveDirectionY = directions.STATIC;
       }
       if (this.handMovePoints[this.handMovePoints.length - 1][2] - this.handMovePoints[this.handMovePoints.length - 2][2] > 0) {
-        handMoveDirectionZ = FigurePredictor.directions.BACK;
+        handMoveDirectionZ = directions.BACK;
       } else if (this.handMovePoints[this.handMovePoints.length - 1][2] - this.handMovePoints[this.handMovePoints.length - 2][2] < 0) {
-        handMoveDirectionZ = FigurePredictor.directions.FORWARD;
+        handMoveDirectionZ = directions.FORWARD;
       } else {
-        handMoveDirectionZ = FigurePredictor.directions.STATIC;
+        handMoveDirectionZ = directions.STATIC;
       }
 
       if (this.handDirections.x.length > 0 && this.handDirections.y.length > 0) {
@@ -142,15 +141,15 @@ export class FigurePredictor {
   predictFigure(landmarks) {
     this.predictDirection(landmarks);
 
-    let figure = FigurePredictor.figures.NONE;
+    let figure = figures.NONE;
 
-    if (this.handDirections.x.length > 1 && this.handDirections.y.length > 1 && this.lastFigure !== FigurePredictor.figures.CIRCLE) {
+    if (this.handDirections.x.length > 1 && this.handDirections.y.length > 1 && this.lastFigure !== figures.CIRCLE) {
       if ((this.handDirections.y[this.handDirections.y.length - 1] !== this.handDirections.y[this.handDirections.y.length - 2] ||
           this.handDirections.x[this.handDirections.x.length - 1] !== this.handDirections.x[this.handDirections.x.length - 2]) &&
-          this.handDirections.y[this.handDirections.y.length - 1] !== FigurePredictor.directions.STATIC &&
-          this.handDirections.y[this.handDirections.y.length - 2] !== FigurePredictor.directions.STATIC &&
-          this.handDirections.x[this.handDirections.x.length - 1] !== FigurePredictor.directions.STATIC) {
-        figure = FigurePredictor.figures.SEMICIRCLE;
+          this.handDirections.y[this.handDirections.y.length - 1] !== directions.STATIC &&
+          this.handDirections.y[this.handDirections.y.length - 2] !== directions.STATIC &&
+          this.handDirections.x[this.handDirections.x.length - 1] !== directions.STATIC) {
+        figure = figures.SEMICIRCLE;
       }
     }
 
@@ -167,23 +166,18 @@ export class FigurePredictor {
       }
 
       for (let i = 1; i < 5; ++i) {
-        if (this.handDirections.x[this.handDirections.x.length - i] === FigurePredictor.directions.STATIC &&
-            this.handDirections.y[this.handDirections.y.length - i] === FigurePredictor.directions.STATIC) {
+        if (this.handDirections.x[this.handDirections.x.length - i] === directions.STATIC &&
+            this.handDirections.y[this.handDirections.y.length - i] === directions.STATIC) {
           flag = false;
         }
       }
 
       if (flag) {
-        figure = FigurePredictor.figures.CIRCLE;
+        figure = figures.CIRCLE;
       }
     }
 
     this.lastFigure = figure;
-
-    if (this.handDirections.x.length >= 4 && this.handDirections.y.length >= 4) {
-      clearArray(this.handDirections.x);
-      clearArray(this.handDirections.y);
-    }
 
     return figure;
   }
