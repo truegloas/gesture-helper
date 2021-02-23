@@ -1,6 +1,3 @@
-// TODO
-// Make dynamic imports
-
 import letter1072 from "./static-letters/letter1072";
 import letter1073 from "./static-letters/letter1073";
 import letter1074 from "./static-letters/letter1074";

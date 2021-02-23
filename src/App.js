@@ -65,7 +65,13 @@ function App() {
 
     if (hand.length > 0) {
       const GE = new fp.GestureEstimator(letters);
-      const gesture = await GE.estimate(hand[0].landmarks, 4);
+      let handLandmarks = hand[0].landmarks.map(
+          (dotCoordinates) => dotCoordinates.map(
+              (coordinate) => Math.round(coordinate)
+          )
+      );
+
+      const gesture = await GE.estimate(handLandmarks, 4);
 
       console.log('----------describe----------');
 
@@ -78,7 +84,7 @@ function App() {
           dimension = 2;
         }
 
-        return hand[0].landmarks[fingerDot1][dimension] < hand[0].landmarks[fingerDot2][dimension];
+        return handLandmarks[fingerDot1][dimension] < handLandmarks[fingerDot2][dimension];
       }
 
       let isRightHand = () => {
@@ -121,10 +127,10 @@ function App() {
           function processDirections(fingerDot, resultSymbol, directionToRecognize) {
             let checkTime = new Date();
 
-            figurePredictor.predictDirection(hand[0].landmarks[fingerDot]);
+            figurePredictor.predictDirection(handLandmarks[fingerDot]);
 
-            if (directionToRecognize === directions.LEFT ||
-                directionToRecognize === directions.RIGHT) {
+            if (((directionToRecognize === directions.LEFT || directions.RIGHT) && figurePredictor.handDirections.x.length > 3) ||
+                figurePredictor.handDirections.y.length > 3) {
               predictedDirection = figurePredictor.handDirections.x[figurePredictor.handDirections.x.length - 1];
             } else {
               predictedDirection = figurePredictor.handDirections.y[figurePredictor.handDirections.y.length - 1];
@@ -157,7 +163,7 @@ function App() {
           }
 
           function processCircles (fingerDot, cooldownInSeconds, resultSymbol) {
-            predictedFigure = figurePredictor.predictFigure(hand[0].landmarks[fingerDot]);
+            predictedFigure = figurePredictor.predictFigure(handLandmarks[fingerDot]);
 
             checkTime = new Date();
 
@@ -196,7 +202,7 @@ function App() {
                 break;
               }
 
-              if (getFingerDifferenceOnDimension(fingerJoints.pinkyFinger[4], fingerJoints.indexFinger[4], 'z')) {
+              if (getFingerDifferenceOnDimension(fingerJoints.indexFinger[4], fingerJoints.pinkyFinger[4], 'z')) {
                 processingSymbol = 'ц';
                 break;
               }
