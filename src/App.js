@@ -36,7 +36,6 @@ function App() {
   const runHandpose = async () => {
 
     const net = await handpose.load();
-    console.log("Handpose model loaded.");
 
     const video = webcamRef.current.video;
 
@@ -73,7 +72,6 @@ function App() {
 
       const gesture = await GE.estimate(handLandmarks, 4);
 
-      console.log('----------describe----------');
 
       function getFingerDifferenceOnDimension(fingerDot1, fingerDot2, dimension) {
         if (dimension === 'x') {
@@ -111,15 +109,12 @@ function App() {
           predictedSymbols.push(symbol);
         }
 
-        console.log('Current symbol: ' + symbol);
-
         if (lettersUsingForDynamicArray.includes(symbol) || processingSymbol !== '') {
 
           if (processingSymbol === '') {
             processingSymbol = symbol;
           }
 
-          console.log('Processing symbol: ' + processingSymbol);
           let predictedDirection;
 
           let predictedFigure;
